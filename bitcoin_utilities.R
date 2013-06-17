@@ -13,15 +13,21 @@ library(gridExtra)
 # change options to print with microseconds
 op <- options(digits.secs=6)
 
-# Retrieves the historical trades from MtGox
-# Uses get_mtgox_trades.py
+# Retrieves the historical trades/orders from MtGox
+# Uses get_mtgox_trades.py and get_mtgox_orders.py. Orders are derived by trades by grouping together trades that resulted from a single order.
 # 
 # Sample run (careful with the date format)
-# trades = load_trades("2013-05-25 02:00:00.00","2013-08-25 02:00:00.00")
+# trades = load_trades("2013-05-25 02:00:00.00","2013-08-25 02:00:00.00", orders = TRUE)
 #
-load_trades = function(start_time, end_time) {
-  system(paste("python /db/private/bitcoin/historical_trades/get_mtgox_trades.py -s",'"',start_time, '"'," -e ",'"',end_time,'"', sep=""))
-  trades = read.csv("/db/private/bitcoin/historical_trades/mtgox_trades.csv", header = FALSE)
+load_trades = function(start_time, end_time, orders = FALSE) {
+  system(paste("python /db/private/bitcoin/historical_data/get_mtgox_trades.py -s",'"',start_time, '"'," -e ",'"',end_time,'"', sep=""))
+  if (orders == TRUE) {
+    system(paste("python /db/private/bitcoin/historical_data/get_mtgox_orders.py", sep=""))
+    trades = read.csv("/db/private/bitcoin/historical_data/mtgox_orders.csv", header = FALSE)           
+  }
+  else {
+    trades = read.csv("/db/private/bitcoin/historical_data/mtgox_trades.csv", header = FALSE)
+  }
   colnames(trades)=c("time", "price", "volume", "properties", "type")
   trades$time = as.POSIXct(strptime(trades$time, '%Y-%m-%d %H:%M:%OS', tz="GMT"))
   trades
@@ -280,10 +286,10 @@ plot_excess_volume = function(percent = 0.0001) {
   g1 = ggplot()
   # check that there are buys before you plot
   if (length(jumps$price_change[jumps$price_change>0]) > 0) {
-    g1 = g1 + geom_point(trades=jumps[jumps$price_change>0,], aes(x=abs(volume_diff), y=as.numeric(duration), size=abs(price_change)), colour="dark green")
+    g1 = g1 + geom_point(data=jumps[jumps$price_change>0,], aes(x=abs(volume_diff), y=as.numeric(duration), size=abs(price_change)), colour="dark green")
   }
   if (length(jumps$price_change[jumps$price_change<0]) > 0) {
-    g1 = g1 + geom_point(trades=jumps[jumps$price_change<0,], aes(x=abs(volume_diff), y=as.numeric(duration), size=abs(price_change)), colour="dark red" )
+    g1 = g1 + geom_point(data=jumps[jumps$price_change<0,], aes(x=abs(volume_diff), y=as.numeric(duration), size=abs(price_change)), colour="dark red" )
   }
   g1 = g1 + scale_size(range = c(2, 15))+xlab("excess shares") + ylab("duration (min)") + 
     ggtitle(paste("Market impact when sell volume =",1/(1-percent),"x buy volume (and vice versa)")) #+ ylim(0,30)+xlim(0,10000) #+theme(legend.position = "none")
@@ -297,10 +303,10 @@ plot_excess_volume5min = function(percent = 0.0001) {
   g1 = ggplot()
   # check that there are buys before you plot
   if (length(jumps$price_change[jumps$price_change>0]) > 0) {
-    g1 = g1 + geom_point(trades=jumps[jumps$price_change>0,], aes(x=abs(shares5min), y=as.numeric(duration), size=abs(price_change5min)), colour="dark green")
+    g1 = g1 + geom_point(data=jumps[jumps$price_change>0,], aes(x=abs(shares5min), y=as.numeric(duration), size=abs(price_change5min)), colour="dark green")
   }
   if (length(jumps$price_change[jumps$price_change<0]) > 0) {
-    g1 = g1 + geom_point(trades=jumps[jumps$price_change<0,], aes(x=abs(shares5min), y=as.numeric(duration), size=abs(price_change5min)), colour="dark red" )
+    g1 = g1 + geom_point(data=jumps[jumps$price_change<0,], aes(x=abs(shares5min), y=as.numeric(duration), size=abs(price_change5min)), colour="dark red" )
   }
   g1 = g1 + scale_size(range = c(2, 15))+xlab("excess shares") + ylab("duration (min)") + 
     ggtitle(paste("Market impact when sell volume =",1/(1-percent),"x buy volume (and vice versa)")) #+ ylim(0,30)+xlim(0,10000) #+theme(legend.position = "none")
@@ -323,9 +329,9 @@ plot_price_tradevolume_lag = function(trades, lag, start_time, end_time) {
   lag_to_plot <- lag[lag$Timestamp>start_time & lag$Timestamp<end_time,]
   lag_to_plot <- lag_to_plot[!is.na(lag_to_plot$Timestamp),]
   # nice trick: put the geom_point after geom_line, to have the points be visible!
-  p1 = ggplot(trades=trades_to_plot) +geom_line(aes(x=time, y=price)) + geom_point(aes(x=time, y=price, colour=type))+theme(legend.position = "none")
-  p2 = ggplot(trades=trades_to_plot) + geom_point(aes(x=time, y=volume, colour=properties))+geom_line(aes(x=time, y=volume))+theme(legend.position = "none")
-  p3 = ggplot(trades=lag_to_plot) + geom_point(aes(x=Timestamp, y=lag))+geom_line(aes(x=Timestamp, y=lag))+ylim(0,min(max(lag_to_plot$lag),100))+xlab("time")
+  p1 = ggplot(data=trades_to_plot) +geom_line(aes(x=time, y=price)) + geom_point(aes(x=time, y=price, colour=type))+theme(legend.position = "none")
+  p2 = ggplot(data=trades_to_plot) + geom_point(aes(x=time, y=volume, colour=properties))+geom_line(aes(x=time, y=volume))+theme(legend.position = "none")
+  p3 = ggplot(data=lag_to_plot) + geom_point(aes(x=Timestamp, y=lag))+geom_line(aes(x=Timestamp, y=lag))+ylim(0,min(max(lag_to_plot$lag),100))+xlab("time")
   grid.arrange(p1,p2,p3)
 }
 
@@ -352,9 +358,9 @@ plot_price_tradevolume_excessvolume = function(trades, start_time, end_time) {
   trades_to_sum$diff = trades_to_sum$cumsum_bid - trades_to_sum$cumsum_ask
   
   # nice trick: put the geom_point after geom_line, to have the points be visible!
-  p1 = ggplot(trades=trades_to_plot) +geom_line(aes(x=time, y=price)) + geom_point(aes(x=time, y=price, colour=type))+theme(legend.position = "none")
-  p2 = ggplot(trades=trades_to_plot) + geom_point(aes(x=time, y=volume, colour=properties))+geom_line(aes(x=time, y=volume))+theme(legend.position = "none")
-  p3 = ggplot(trades=trades_to_sum) + geom_point(aes(x=time, y=diff))
+  p1 = ggplot(data=trades_to_plot) +geom_line(aes(x=time, y=price)) + geom_point(aes(x=time, y=price, colour=type))+theme(legend.position = "none")
+  p2 = ggplot(data=trades_to_plot) + geom_point(aes(x=time, y=volume, colour=properties))+geom_line(aes(x=time, y=volume))+theme(legend.position = "none")
+  p3 = ggplot(data=trades_to_sum) + geom_point(aes(x=time, y=diff))
   grid.arrange(p1,p2,p3)
 }
 
